@@ -1,0 +1,74 @@
+#include <webots/robot.h>
+#include <webots/motor.h>
+#include <webots/distance_sensor.h>
+#include <webots/light_sensor.h>
+#include <stdio.h>
+
+#define TIME_STEP 64
+#define THRESHOLD 600.0  // 
+
+WbDeviceTag left_motor, right_motor, ds_front, ls_left;  // Declaring global variables for motors and sensors
+double max_light_value = 0;  // Variable to store the maximum light value
+
+void move_forward() {
+    wb_motor_set_velocity(left_motor, 3.0);
+    wb_motor_set_velocity(right_motor, 3.0);
+}
+
+void turn_left() {
+    wb_motor_set_velocity(left_motor, -1.0);  // Adjust this value
+    wb_motor_set_velocity(right_motor, 1.0);
+}
+
+void turn_right() {
+    wb_motor_set_velocity(left_motor, 1.0);
+    wb_motor_set_velocity(right_motor, -2.0);  // Adjust this value
+}
+
+void stop() {
+    wb_motor_set_velocity(left_motor, 0.0);
+    wb_motor_set_velocity(right_motor, 0.0);
+}
+
+void initialize_motors_and_sensors() {
+    left_motor = wb_robot_get_device("left wheel motor");
+    right_motor = wb_robot_get_device("right wheel motor");
+    wb_motor_set_position(left_motor, INFINITY);
+    wb_motor_set_position(right_motor, INFINITY);
+
+    ds_front = wb_robot_get_device("ds0");  // Update 'ds0' with the correct name of your distance sensor
+    wb_distance_sensor_enable(ds_front, TIME_STEP);
+    
+    ls_left = wb_robot_get_device("ls0");  // Update 'ls0' with the correct name of your light sensor
+    wb_light_sensor_enable(ls_left, TIME_STEP);
+}
+
+int main(int argc, char **argv) {
+    wb_robot_init();  // Initialize the robot
+    initialize_motors_and_sensors();  // Initialize sensors and motors
+
+    while (wb_robot_step(TIME_STEP) != -1) {
+        // Read the distance and light sensor values
+        double distance_to_wall = wb_distance_sensor_get_value(ds_front);
+        double light_value = wb_light_sensor_get_value(ls_left);
+        
+        // Print the distance to the console
+        printf("Distance to wall: %f\n", distance_to_wall);
+
+        // Obstacle avoidance logic
+        if (distance_to_wall < THRESHOLD) {
+            turn_left();  // Turn right if too close to the wall (change to left to see different behavior)
+        } else {
+            move_forward();  // Continue moving forward
+        }
+
+        // Light detection logic
+        if (light_value > max_light_value) {  // Detect brighter light source
+            max_light_value = light_value;
+            // Add logic here to track the position or take action
+        }
+    }
+
+    wb_robot_cleanup();  // Cleanup Webots resources
+    return 0;
+}
