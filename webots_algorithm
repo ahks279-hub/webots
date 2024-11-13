@@ -1,0 +1,67 @@
+#include <webots/Robot.hpp>
+#include <webots/Motor.hpp>
+#include <webots/DistanceSensor.hpp>
+#include <webots/Camera.hpp>
+
+#define TIME_STEP 64 // Webots simulation time step (ms)
+#define MAX_SPEED 6.28 // Maximum speed for the motors
+
+using namespace webots;
+
+class MazeSolver : public Robot {
+public:
+    MazeSolver() {
+        // Initialize motors
+        leftMotor = getMotor("left wheel motor");
+        rightMotor = getMotor("right wheel motor");
+
+        // Initialize distance sensors
+        frontSensor = getDistanceSensor("front sensor");
+        rightSensor = getDistanceSensor("right sensor");
+        leftSensor = getDistanceSensor("left sensor");
+
+        // Enable sensors
+        frontSensor->enable(TIME_STEP);
+        rightSensor->enable(TIME_STEP);
+        leftSensor->enable(TIME_STEP);
+
+        // Set the motors to maximum speed
+        leftMotor->setPosition(INFINITY);
+        rightMotor->setPosition(INFINITY);
+        leftMotor->setVelocity(0.0);
+        rightMotor->setVelocity(0.0);
+    }
+
+    void solveMaze() {
+        while (step(TIME_STEP) != -1) {
+            // Read the sensor values
+            double front = frontSensor->getValue();
+            double right = rightSensor->getValue();
+            double left = leftSensor->getValue();
+
+            // Logic to follow the right-hand rule
+            if (right < 500) {  // If there's a wall on the right
+                if (front > 500) {  // If there's no wall ahead, move forward
+                    leftMotor->setVelocity(MAX_SPEED);
+                    rightMotor->setVelocity(MAX_SPEED);
+                } else {  // Turn left if there's a wall ahead
+                    leftMotor->setVelocity(-MAX_SPEED); // Turn left
+                    rightMotor->setVelocity(MAX_SPEED);
+                }
+            } else {  // If there's no wall on the right, turn right
+                leftMotor->setVelocity(MAX_SPEED);
+                rightMotor->setVelocity(-MAX_SPEED);
+            }
+        }
+    }
+
+private:
+    Motor *leftMotor, *rightMotor;
+    DistanceSensor *frontSensor, *rightSensor, *leftSensor;
+};
+
+int main() {
+    MazeSolver solver;
+    solver.solveMaze();
+    return 0;
+}
