@@ -1,0 +1,112 @@
+#include <webots/robot.h>
+#include <webots/motor.h>
+#include <webots/distance_sensor.h>
+#include <webots/light_sensor.h>
+#include <stdio.h>
+
+// Constants
+#define TIME_STEP 64
+#define MAX_SPEED 6.28
+
+// Sensor thresholds
+#define OBSTACLE_THRESHOLD 100.0
+
+// Sensor names
+const char *DISTANCE_SENSOR_NAMES[8] = {"ds1", "ds2", "ds3", "ds4", "ds5", "ds6", "ds7", "ds8"};
+#define LEFT_LIGHT_SENSOR "ls1"
+#define RIGHT_LIGHT_SENSOR "ls2"
+
+// Main function
+int main() {
+  // Initialize Webots API
+  wb_robot_init();
+
+  // Motors
+  WbDeviceTag left_motor = wb_robot_get_device("left wheel motor");
+  WbDeviceTag right_motor = wb_robot_get_device("right wheel motor");
+
+  // Enable position control for motors
+  wb_motor_set_position(left_motor, INFINITY);
+  wb_motor_set_position(right_motor, INFINITY);
+  wb_motor_set_velocity(left_motor, 0.0);
+  wb_motor_set_velocity(right_motor, 0.0);
+
+  // Distance sensors
+  WbDeviceTag distance_sensors[8];
+  double distance_values[8];
+  for (int i = 0; i < 8; i++) {
+    distance_sensors[i] = wb_robot_get_device(DISTANCE_SENSOR_NAMES[i]);
+    wb_distance_sensor_enable(distance_sensors[i], TIME_STEP);
+  }
+
+  // Light sensors
+  WbDeviceTag left_light_sensor = wb_robot_get_device(LEFT_LIGHT_SENSOR);
+  WbDeviceTag right_light_sensor = wb_robot_get_device(RIGHT_LIGHT_SENSOR);
+  wb_light_sensor_enable(left_light_sensor, TIME_STEP);
+  wb_light_sensor_enable(right_light_sensor, TIME_STEP);
+
+  // Main loop
+  while (wb_robot_step(TIME_STEP) != -1) {
+    // Read distance sensor values
+    for (int i = 0; i < 8; i++) {
+      distance_values[i] = wb_distance_sensor_get_value(distance_sensors[i]);
+    }
+
+    // Read light sensor values
+    double left_light = wb_light_sensor_get_value(left_light_sensor);
+    double right_light = wb_light_sensor_get_value(right_light_sensor);
+
+    // Debugging outputs
+    for (int i = 0; i < 8; i++) {
+      printf("Distance Sensor %d: %f\n", i + 1, distance_values[i]);
+    }
+    printf("Left Light: %f\n", left_light);
+    printf("Right Light: %f\n", right_light);
+
+    // Movement logic
+    double left_speed = MAX_SPEED;
+    double right_speed = MAX_SPEED;
+
+    // Obstacle detection logic
+    if (distance_values[0] < OBSTACLE_THRESHOLD || distance_values[1] < OBSTACLE_THRESHOLD) {
+      // Obstacle detected in front
+      if (distance_values[0] < distance_values[1]) {
+        // Turn right
+        left_speed = MAX_SPEED;
+        right_speed = -MAX_SPEED / 2;
+        printf("Turning right\n");
+      } else {
+        // Turn left
+        left_speed = -MAX_SPEED / 2;
+        right_speed = MAX_SPEED;
+        printf("Turning left\n");
+      }
+    } else if (distance_values[2] < OBSTACLE_THRESHOLD || distance_values[7] < OBSTACLE_THRESHOLD) {
+      // Obstacle detected on the sides
+      if (distance_values[2] < distance_values[7]) {
+        // Obstacle closer on the left, veer right
+        left_speed = MAX_SPEED;
+        right_speed = MAX_SPEED / 2;
+        printf("Veering right\n");
+      } else {
+        // Obstacle closer on the right, veer left
+        left_speed = MAX_SPEED / 2;
+        right_speed = MAX_SPEED;
+        printf("Veering left\n");
+      }
+    } else {
+      // No obstacles, move straight
+      left_speed = MAX_SPEED;
+      right_speed = MAX_SPEED;
+      printf("Moving straight\n");
+    }
+
+    // Set motor speeds
+    wb_motor_set_velocity(left_motor, left_speed);
+    wb_motor_set_velocity(right_motor, right_speed);
+  }
+
+  // Cleanup
+  wb_robot_cleanup();
+  return 0;
+}
