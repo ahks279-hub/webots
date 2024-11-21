@@ -1,0 +1,116 @@
+#include <webots/robot.h>
+#include <webots/motor.h>
+#include <webots/gps.h>
+#include <webots/distance_sensor.h>
+#include <webots/light_sensor.h>
+#include <stdio.h>
+
+// Constants
+#define TIME_STEP 64
+#define MAX_SPEED 6.28
+#define OBSTACLE_THRESHOLD 100.0 // Threshold for obstacle detection
+#define WALL_FOLLOW_THRESHOLD 150.0 // Threshold to follow the right-hand wall
+
+// Sensor names
+const char *DISTANCE_SENSOR_NAMES[8] = {"ds1", "ds2", "ds3", "ds4", "ds5", "ds6", "ds7", "ds8"};
+#define LEFT_LIGHT_SENSOR "light_sens1"
+#define RIGHT_LIGHT_SENSOR "light_sens2"
+
+int main() {
+  // Initialize Webots API
+  wb_robot_init();
+
+  // Initialize motors
+  WbDeviceTag left_motor = wb_robot_get_device("left wheel motor");
+  WbDeviceTag right_motor = wb_robot_get_device("right wheel motor");
+
+  // Set motors to velocity control mode (infinite position)
+  wb_motor_set_position(left_motor, INFINITY);
+  wb_motor_set_position(right_motor, INFINITY);
+  wb_motor_set_velocity(left_motor, 0.0);
+  wb_motor_set_velocity(right_motor, 0.0);
+
+  // Initialize GPS
+  WbDeviceTag gps = wb_robot_get_device("gps");
+  wb_gps_enable(gps, TIME_STEP);
+
+  // Initialize distance sensors
+  WbDeviceTag distance_sensors[8];
+  double distance_values[8];
+  for (int i = 0; i < 8; i++) {
+    distance_sensors[i] = wb_robot_get_device(DISTANCE_SENSOR_NAMES[i]);
+    wb_distance_sensor_enable(distance_sensors[i], TIME_STEP);
+  }
+
+  // Initialize light sensors
+  WbDeviceTag left_light_sensor = wb_robot_get_device(LEFT_LIGHT_SENSOR);
+  WbDeviceTag right_light_sensor = wb_robot_get_device(RIGHT_LIGHT_SENSOR);
+  wb_light_sensor_enable(left_light_sensor, TIME_STEP);
+  wb_light_sensor_enable(right_light_sensor, TIME_STEP);
+
+  printf("Robot starting with right-hand rule maze solving...\n");
+
+  // Main loop
+  while (wb_robot_step(TIME_STEP) != -1) {
+    // Read GPS values
+    const double *gps_coords = wb_gps_get_values(gps);
+    printf("GPS Position: X=%f, Y=%f, Z=%f\n", gps_coords[0], gps_coords[1], gps_coords[2]);
+
+    // Read distance sensor values
+    for (int i = 0; i < 8; i++) {
+      distance_values[i] = wb_distance_sensor_get_value(distance_sensors[i]);
+      printf("Distance Sensor %d: %f\n", i + 1, distance_values[i]);
+    }
+
+    // Read light sensor values
+    double left_light = wb_light_sensor_get_value(left_light_sensor);
+    double right_light = wb_light_sensor_get_value(right_light_sensor);
+    printf("Left Light Sensor: %f, Right Light Sensor: %f\n", left_light, right_light);
+
+    // Movement logic
+    double left_speed = MAX_SPEED;
+    double right_speed = MAX_SPEED;
+
+    // Right-hand rule maze-solving logic
+    if (distance_values[2] > WALL_FOLLOW_THRESHOLD) {
+      // No wall on the right, turn right
+      printf("No wall on the right. Turning right.\n");
+      left_speed = MAX_SPEED;
+      right_speed = MAX_SPEED / 2;
+    } else if (distance_values[0] < OBSTACLE_THRESHOLD || distance_values[1] < OBSTACLE_THRESHOLD) {
+      // Obstacle detected ahead, turn left
+      printf("Obstacle ahead. Turning left.\n");
+      left_speed = -MAX_SPEED / 2;
+      right_speed = MAX_SPEED;
+    } else if (distance_values[7] < WALL_FOLLOW_THRESHOLD) {
+      // Wall on the right, follow it
+      printf("Following the wall on the right.\n");
+      left_speed = MAX_SPEED;
+      right_speed = MAX_SPEED / 2;
+    } else {
+      // Move straight if nothing else applies
+      printf("Moving straight.\n");
+      left_speed = MAX_SPEED;
+      right_speed = MAX_SPEED;
+    }
+
+    // Light detection logic
+    if (left_light > right_light && left_light > 200) {
+      printf("Light detected on the left! Turning left toward light.\n");
+      left_speed = MAX_SPEED / 2;
+      right_speed = MAX_SPEED;
+    } else if (right_light > left_light && right_light > 200) {
+      printf("Light detected on the right! Turning right toward light.\n");
+      left_speed = MAX_SPEED;
+      right_speed = MAX_SPEED / 2;
+    }
+
+    // Set motor speeds
+    wb_motor_set_velocity(left_motor, left_speed);
+    wb_motor_set_velocity(right_motor, right_speed);
+  }
+
+  // Cleanup
+  wb_robot_cleanup();
+  return 0;
+}
