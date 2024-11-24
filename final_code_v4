@@ -1,0 +1,158 @@
+#include <webots/robot.h>
+#include <webots/motor.h>
+#include <webots/distance_sensor.h>
+#include <webots/light_sensor.h>
+#include <stdio.h>
+
+#define TIME_STEP 64  // Time step for simulation in ms
+#define MAX_SPEED 6.28 // Maximum speed of the e-puck
+#define OBSTACLE_THRESHOLD 350.0  // Threshold to detect obstacles
+#define LIGHT_THRESHOLD 500.0 // Threshold to detect light
+
+// Sensor names
+const char *DISTANCE_SENSOR_NAMES[8] = {"ds1", "ds2", "ds3", "ds4", "ds5", "ds6", "ds7", "ds8"};
+const char *LIGHT_SENSOR_NAMES[2] = {"ls1", "ls2"}; // Two light sensors
+
+// Variables for smoothing sensor readings
+double smoothed_distance_values[8] = {0.0}; // Smoothed sensor readings
+double last_readings[8] = {0.0}; // Last sensor readings for smoothing
+double light_sensor_values[2] = {0.0}; // Light sensor readings
+
+// Device initialization
+WbDeviceTag distance_sensors[8];
+WbDeviceTag light_sensors[2];
+WbDeviceTag left_motor, right_motor;
+
+void initialize_devices() {
+    // Initialize distance sensors
+    for (int i = 0; i < 8; i++) {
+        distance_sensors[i] = wb_robot_get_device(DISTANCE_SENSOR_NAMES[i]);
+        wb_distance_sensor_enable(distance_sensors[i], TIME_STEP);
+    }
+
+    // Initialize light sensors
+    for (int i = 0; i < 2; i++) {
+        light_sensors[i] = wb_robot_get_device(LIGHT_SENSOR_NAMES[i]);
+        wb_light_sensor_enable(light_sensors[i], TIME_STEP);
+    }
+
+    // Initialize motors
+    left_motor = wb_robot_get_device("left wheel motor");
+    right_motor = wb_robot_get_device("right wheel motor");
+    wb_motor_set_position(left_motor, INFINITY);  // Allow continuous rotation
+    wb_motor_set_position(right_motor, INFINITY); // Allow continuous rotation
+}
+
+void smooth_sensor_reading(int sensor_index, double new_value) {
+    // Simple moving average filter
+    smoothed_distance_values[sensor_index] = (last_readings[sensor_index] + new_value) / 2.0;
+    last_readings[sensor_index] = smoothed_distance_values[sensor_index];
+}
+
+void check_light_sensor() {
+    // Read light sensor values
+    for (int i = 0; i < 2; i++) {
+        light_sensor_values[i] = wb_light_sensor_get_value(light_sensors[i]);
+    }
+
+    // Print light sensor values for debugging
+    printf("Light Sensor Values:\n");
+    for (int i = 0; i < 2; i++) {
+        printf("%s: %f\n", LIGHT_SENSOR_NAMES[i], light_sensor_values[i]);
+    }
+
+    // If either light sensor detects light, stop the robot
+    if (light_sensor_values[0] > LIGHT_THRESHOLD || light_sensor_values[1] > LIGHT_THRESHOLD) {
+        printf("Light detected. Stopping the robot.\n");
+
+        // Stop the motors
+        wb_motor_set_velocity(left_motor, 0.0);  // Stop left motor
+        wb_motor_set_velocity(right_motor, 0.0); // Stop right motor
+
+        // Optionally, you can add a return to exit further processing
+        return;  // Return to exit the current loop and stop any further movement
+    }
+}
+
+void navigate() {
+    // Read and smooth sensor values for distance sensors
+    for (int i = 0; i < 8; i++) {
+        double sensor_value = wb_distance_sensor_get_value(distance_sensors[i]);
+        smooth_sensor_reading(i, sensor_value);
+    }
+
+    // Inside the navigation loop, print out the light sensor values:
+    double ls1_value = wb_light_sensor_get_value(light_sensors[0]);
+    double ls2_value = wb_light_sensor_get_value(light_sensors[1]);
+
+    // Print out the light sensor readings to the console
+    printf("Light Sensor 1: %f, Light Sensor 2: %f\n", ls1_value, ls2_value);
+
+    // Print distance sensor values for debugging
+    printf("Smoothed Distance Sensor Values:\n");
+    for (int i = 0; i < 8; i++) {
+        printf("%s: %f\n", DISTANCE_SENSOR_NAMES[i], smoothed_distance_values[i]);
+    }
+
+    // Assign sensor readings for easier understanding
+    double front_wall = smoothed_distance_values[2];  // Using front sensor ds3
+    double left_wall = smoothed_distance_values[0];   // Left sensor ds8
+    double right_wall = smoothed_distance_values[4];  // Right sensor ds5
+    double near_left = smoothed_distance_values[7];   // Near left sensor ds1
+    double front_left = smoothed_distance_values[1];  // Front left sensor ds2
+
+    // Check for light sensor condition
+    check_light_sensor();
+
+    // Corner detection logic: Both near_left and front_left are under the threshold
+    if (near_left < OBSTACLE_THRESHOLD && front_left < OBSTACLE_THRESHOLD) {
+        printf("Corner detected, turning right.\n");
+        wb_motor_set_velocity(left_motor, MAX_SPEED);  // Forward left motor
+        wb_motor_set_velocity(right_motor, -MAX_SPEED);  // Reverse right motor
+        for (int i = 0; i < 10; i++) {
+            wb_robot_step(TIME_STEP);
+        }
+    } 
+    // If the front is blocked but there's no wall on the left, turn left
+    else if (front_wall < OBSTACLE_THRESHOLD && left_wall > OBSTACLE_THRESHOLD) {
+        printf("Obstacle detected in front, turning left.\n");
+        wb_motor_set_velocity(left_motor, -MAX_SPEED);  // Reverse left motor
+        wb_motor_set_velocity(right_motor, MAX_SPEED);  // Forward right motor
+        for (int i = 0; i < 10; i++) {
+            wb_robot_step(TIME_STEP);
+        }
+    } 
+    // If no wall is in front and no wall on the left, move forward
+    else if (front_wall > OBSTACLE_THRESHOLD && left_wall > OBSTACLE_THRESHOLD) {
+        printf("Path clear. Moving forward.\n");
+        wb_motor_set_velocity(left_motor, MAX_SPEED);   // Move forward
+        wb_motor_set_velocity(right_motor, MAX_SPEED);  // Move forward
+    } 
+    // If the front is blocked but there's no wall on the right, turn right
+    else if (front_wall < OBSTACLE_THRESHOLD && right_wall > OBSTACLE_THRESHOLD) {
+        printf("Obstacle detected in front, turning right.\n");
+        wb_motor_set_velocity(left_motor, MAX_SPEED);  // Forward left motor
+        wb_motor_set_velocity(right_motor, -MAX_SPEED);  // Reverse right motor
+        for (int i = 0; i < 10; i++) {
+            wb_robot_step(TIME_STEP);
+        }
+    }
+
+    wb_robot_step(TIME_STEP);
+}
+
+int main() {
+    wb_robot_init();
+
+    // Initialize devices
+    initialize_devices();
+
+    // Main loop
+    while (wb_robot_step(TIME_STEP) != -1) {
+        navigate();
+    }
+
+    wb_robot_cleanup();
+    return 0;
+}
+
